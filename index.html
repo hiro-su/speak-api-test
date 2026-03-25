@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QRコード 音声読み上げシステム（データ圧縮版）</title>
+    <!-- テキスト圧縮用ライブラリ LZ-String -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; line-height: 1.6; background-color: #f9f9f9; }
+        h1 { text-align: center; font-size: 1.5rem; }
+        .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .text-box { background: #f0f0f0; padding: 15px; border-radius: 5px; min-height: 100px; white-space: pre-wrap; font-size: 0.95rem; margin-bottom: 20px; }
+        .stats { font-size: 0.85rem; color: #555; text-align: right; margin-bottom: 10px; }
+        .play-btn { display: block; width: 100%; padding: 20px; font-size: 18px; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
+        .play-btn:active { background: #218838; transform: translateY(2px); box-shadow: none; }
+        .stop-btn { display: block; width: 100%; padding: 15px; font-size: 16px; background: #dc3545; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .admin-area { margin-top: 50px; padding-top: 20px; border-top: 2px dashed #ccc; }
+        textarea { width: 100%; height: 150px; box-sizing: border-box; padding: 10px; margin-bottom: 10px; font-size: 0.9rem; }
+        .generate-btn { background: #007BFF; color: white; padding: 10px; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; }
+        #qr-result { text-align: center; margin-top: 15px; }
+        #qr-result img { max-width: 100%; height: auto; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>音声ガイド</h1>
+        <div id="displayText" class="text-box">読み込み中...</div>
+        <div id="textStats" class="stats"></div>
+        <button id="playBtn" class="play-btn" onclick="startSpeech()" disabled>▶ 音声を再生する</button>
+        <button id="stopBtn" class="stop-btn" onclick="stopSpeech()">■ 停止</button>
+    </div>
+
+    <div class="admin-area">
+        <h2>【生成用】QRコード作成ツール</h2>
+        <p>テキストはブラウザ上で圧縮され、URLパラメータとして付与されます。サーバーには一切保存されません。</p>
+        <textarea id="inputText">【圧縮アルゴリズムを利用した音声読み上げのテスト】
+このシステムは、サーバーにデータを保存せず、QRコード内に直接テキストデータを埋め込む仕組みを採用しています。
+
+通常、日本語のテキストをURLのパラメータとして渡そうとすると、「URLエンコード」と呼ばれる処理によって1文字が約9文字の英数字に膨れ上がってしまいます。例えば500文字の日本語テキストは、約4500文字の巨大なURLになってしまい、スマートフォンの標準カメラではQRコードとして読み取ることが困難になります。
+
+そこでこのシステムでは、「LZ-String」というJavaScriptの圧縮ライブラリを導入しました。これにより、日本語テキストをURLセーフな文字列に高効率で圧縮することが可能になります。
+エンコードによる文字数の爆発を防ぐことで、500文字から600文字程度の日本語であっても、URLの長さを1000文字から1500文字程度に抑えることができます。
+
+この長さであれば、高解像度で少し大きめに印刷することで、iPhoneやAndroidの標準カメラでも十分に読み取りが可能です。美術館の作品解説や、観光地の案内板など、ネットワークに依存しないスタンドアローンな音声ガイドシステムとして活用できます。
+文字数が増えれば増えるほどQRコードの模様は細かくなるため、実際の運用では印刷サイズとのバランスを見ながら文字数を調整することをおすすめします。（約550文字）</textarea>
+        <button class="generate-btn" onclick="generateQR()">圧縮してQRコードを生成</button>
+        <div id="qr-result"></div>
+    </div>
+
+    <script>
+        // ベースURLをGitHub PagesのURLに変更
+        const BASE_URL = "https://hiro-su.github.io/speak-api-test/";
+        let textToSpeak = "";
+
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const compressedData = urlParams.get('d');
+
+            const displayEl = document.getElementById('displayText');
+            const playBtn = document.getElementById('playBtn');
+            const statsEl = document.getElementById('textStats');
+
+            if (compressedData) {
+                try {
+                    textToSpeak = LZString.decompressFromEncodedURIComponent(compressedData);
+                    if (textToSpeak) {
+                        displayEl.innerText = textToSpeak;
+                        statsEl.innerText = `文字数: ${textToSpeak.length}文字`;
+                        playBtn.disabled = false;
+                        playBtn.innerText = "▶ 音声を再生する";
+                    } else {
+                        throw new Error("解凍失敗");
+                    }
+                } catch (e) {
+                    displayEl.innerText = "※データの解凍に失敗しました。QRコードが破損している可能性があります。";
+                }
+            } else {
+                displayEl.innerText = "※URLにデータが含まれていません。下のツールからQRコードを生成してスキャンしてください。";
+            }
+        };
+
+        function startSpeech() {
+            if (!textToSpeak) return;
+            window.speechSynthesis.cancel();
+
+            // Android対策: 文単位で分割して読み上げ
+            const sentences = textToSpeak.match(/[^。\n]+[。\n]*/g);
+
+            if (sentences && sentences.length > 0) {
+                sentences.forEach(sentence => {
+                    const utterance = new SpeechSynthesisUtterance(sentence.trim());
+                    utterance.lang = 'ja-JP';
+                    window.speechSynthesis.speak(utterance);
+                });
+            } else {
+                const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                utterance.lang = 'ja-JP';
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function stopSpeech() {
+            window.speechSynthesis.cancel();
+        }
+
+        function generateQR() {
+            const text = document.getElementById('inputText').value;
+            if (!text) return alert("テキストを入力してください");
+            
+            const compressedData = LZString.compressToEncodedURIComponent(text);
+            const targetUrl = `${BASE_URL}?d=${compressedData}`;
+            
+            const uncompressedUrlLength = encodeURIComponent(text).length;
+            const compressedUrlLength = compressedData.length;
+            const reductionRate = Math.round((1 - (compressedUrlLength / uncompressedUrlLength)) * 100);
+
+            const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&ecc=M&data=${encodeURIComponent(targetUrl)}`;
+            
+            document.getElementById('qr-result').innerHTML = `
+                <div style="background:#e9ecef; padding:10px; border-radius:5px; margin-bottom:15px; font-size:0.9rem; text-align:left;">
+                    <strong>【圧縮効果の確認】</strong><br>
+                    元の文字数: ${text.length} 文字<br>
+                    そのままURLにした場合の長さ: 約 ${uncompressedUrlLength} 文字<br>
+                    <span style="color:#28a745; font-weight:bold;">圧縮後のURLパラメータ長: ${compressedUrlLength} 文字 （約${reductionRate}% 削減！）</span><br>
+                    <small>全体のURL長: ${targetUrl.length} 文字</small>
+                </div>
+                <img src="${qrApiUrl}" alt="QR Code" style="border:1px solid #ccc; padding:10px; background:#fff;">
+                <p><small>※模様が細かいので、スキャン時はPC画面を明るくして少し近づけてください。</small></p>
+            `;
+        }
+    </script>
+</body>
+</html>
